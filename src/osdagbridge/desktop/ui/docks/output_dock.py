@@ -39,6 +39,7 @@ from osdagbridge.core.utils.common import (
     KEY_UTIL_LONG_TRANS_SHEAR, KEY_UTIL_FATIGUE, KEY_UTIL_STRESS_LIMITATION,
     KEY_UTIL_DEFLECTION_CRACK, KEY_ANALYSIS_LOAD_COMBINATION,
     KEY_OUTPUT_DOCK_MEMBER_ID, KEY_OUTPUT_DOCK_LOAD_COMBINATION,
+    KEY_ANALYSIS_MEMBER, PLOT_TRANSVERSE_MEMBERS,
     KEY_TS_NO_OF_GIRDERS,
 )
 from osdagbridge.desktop.ui.utils.custom_buttons import DockCustomButton
@@ -479,7 +480,7 @@ class OutputDock(QWidget):
 
     def _make_radio_grid(self, key: str, label: str, values, meta: dict):
         """
-        N-column grid of CustomRadioButtons, aligned in rows using QGridLayout.
+        N-column grid of custom radio buttons, aligned in rows using QGridLayout.
     
         values    = [["Fx","Mx","Dx"], ["Fy","My","Dy"], ...]   (column-first list)
         label     = section label string, or None to skip the label row.
@@ -858,12 +859,11 @@ class OutputDock(QWidget):
             combo_design.blockSignals(False)
 
         # 2. Update Analysis Member dropdown
-        from osdagbridge.core.utils.common import KEY_ANALYSIS_MEMBER
         combo_analysis = self._w(KEY_ANALYSIS_MEMBER)
         if combo_analysis is not None:
             combo_analysis.blockSignals(True)
             combo_analysis.clear()
-            combo_analysis.addItems(["All"] + items)
+            combo_analysis.addItems(["All", PLOT_TRANSVERSE_MEMBERS] + items)
             combo_analysis.setCurrentIndex(0)
             combo_analysis.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
             combo_analysis.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)

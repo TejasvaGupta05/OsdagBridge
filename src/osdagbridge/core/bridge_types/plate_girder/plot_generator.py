@@ -159,6 +159,184 @@ def _build_polyline(elems, members, nodes, force_i, force_j, ds):
     return np.array(xs), np.array(ys), np.array(zs), np.array(vals), node_ids
 
 
+def _transverse_member_values(ds, component_key, nodes, members, transverse_members):
+    is_force = component_key in FORCE_MAP
+    values_by_member = []
+    if is_force:
+        force_i, force_j = FORCE_MAP[component_key]
+        available_components = {
+            str(component).lower(): component
+            for component in ds["forces"].coords["Component"].values
+        }
+        actual_components = (
+            available_components.get(force_i.lower()),
+            available_components.get(force_j.lower()),
+        )
+        available_elements = {
+            int(element) for element in ds["forces"].coords["Element"].values
+        }
+        if None not in actual_components:
+            for element in transverse_members:
+                element = int(element)
+                if element not in members or element not in available_elements:
+                    continue
+                node_i, node_j = members[element]
+                if node_i not in nodes or node_j not in nodes:
+                    continue
+                values = [
+                    float(ds["forces"].sel(Element=element, Component=component).values) / 1000.0
+                    for component in actual_components
+                ]
+                values_by_member.append((element, node_i, node_j, values))
+    else:
+        available_components = {
+            str(component).lower(): component
+            for component in ds["displacements"].coords["Component"].values
+        }
+        mapped_component = DISP_MAP[component_key].lower()
+        component = available_components.get(mapped_component[-1])
+        if component is None:
+            component = available_components.get(mapped_component)
+        if component is not None:
+            node_values = {
+                int(node): float(value) * 1000.0
+                for node, value in zip(
+                    ds["displacements"].coords["Node"].values,
+                    ds["displacements"].sel(Component=component).values,
+                )
+            }
+            if component_key in {"Dy", "Dz"}:
+                node_values = {node: -value for node, value in node_values.items()}
+            for element in transverse_members:
+                element = int(element)
+                if element not in members:
+                    continue
+                node_i, node_j = members[element]
+                if node_i not in nodes or node_j not in nodes:
+                    continue
+                if node_i not in node_values or node_j not in node_values:
+                    continue
+                values_by_member.append(
+                    (element, node_i, node_j, [node_values[node_i], node_values[node_j]])
+                )
+    return values_by_member
+
+
+def build_figure_transverse(
+    ds,
+    component_key,
+    nodes,
+    members,
+    transverse_members,
+    eng_scale=1.0,
+):
+    v_scale = _value_plot_scale(eng_scale)
+    is_force = component_key in FORCE_MAP
+    component_display = (
+        FORCE_DISPLAY.get(component_key, component_key)
+        if is_force
+        else DISP_DISPLAY.get(component_key, component_key)
+    )
+    unit = "kN" if component_key.startswith("F") else "kNm" if is_force else "mm"
+
+    fig = Figure(figsize=(14, 6), dpi=110, facecolor="white")
+    ax = fig.add_subplot(111, projection="3d", facecolor="white")
+    all_xs = [coord[0] for coord in nodes.values()]
+    all_zs = [coord[2] for coord in nodes.values()]
+    x_min, x_max = min(all_xs), max(all_xs)
+    z_min, z_max = min(all_zs), max(all_zs)
+    x_range = x_max - x_min or 1.0
+    z_range = z_max - z_min or 1.0
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(z_min, z_max)
+    ax.set_box_aspect((x_range, z_range, x_range * 0.3))
+    _add_grillage_background(ax, nodes, members, show_transverse=True)
+
+    values_by_member = _transverse_member_values(
+        ds, component_key, nodes, members, transverse_members
+    )
+
+    color = "#1565C0" if component_key.startswith("F") else "#C62828" if is_force else "#6A1B9A"
+    all_points = []
+    for element, node_i, node_j, values in values_by_member:
+        coord_i, coord_j = nodes[node_i], nodes[node_j]
+        value_i, value_j = values
+        plot_i, plot_j = value_i * v_scale, value_j * v_scale
+        ax.plot(
+            [coord_i[0], coord_j[0]],
+            [coord_i[2], coord_j[2]],
+            [plot_i, plot_j],
+            color=color,
+            linewidth=2.0,
+            zorder=5,
+        )
+        for node, coord, value, plot_value in (
+            (node_i, coord_i, value_i, plot_i),
+            (node_j, coord_j, value_j, plot_j),
+        ):
+            ax.plot(
+                [coord[0], coord[0]],
+                [coord[2], coord[2]],
+                [0.0, plot_value],
+                color=color,
+                linewidth=0.8,
+                alpha=0.6,
+                zorder=4,
+            )
+            all_points.append((element, node, coord[0], coord[2], value, plot_value))
+
+    summary_data = {}
+    if all_points:
+        values = [point[4] for point in all_points]
+        summary_data["Transverse"] = {"max": max(values), "min": min(values)}
+        max_point = max(all_points, key=lambda point: point[4])
+        min_point = min(all_points, key=lambda point: point[4])
+        for point, gid in ((max_point, "max_line"), (min_point, "min_line")):
+            _, _, x, z, value, plot_value = point
+            ax.scatter([x], [z], [plot_value], color=color, s=35, zorder=8, gid=gid)
+            ax.text(
+                x, z, plot_value, f" {value:.3f} {unit}",
+                fontsize=7, fontweight="bold", color="#333333", gid=gid,
+            )
+        for element, node, x, z, value, plot_value in all_points:
+            if abs(value) > 1e-8:
+                ax.text(
+                    x, z, plot_value, f" E{element}: {value:.3f} {unit}",
+                    fontsize=6, color="#455A64", gid="all_vals",
+                )
+
+    _add_supports(ax, nodes, members)
+    _add_node_number_labels(ax, nodes)
+    _add_element_number_labels(ax, nodes, members)
+    ax.set_xlabel("Span Length (m)", fontsize=10, labelpad=8)
+    ax.set_ylabel("Bridge Width (m)", fontsize=10, labelpad=8)
+    ax.set_zlabel(f"{component_display} ({unit})", fontsize=10, labelpad=8)
+    plotted_values = [point[5] for point in all_points]
+    z_min_value = min([0.0, *plotted_values])
+    z_max_value = max([0.0, *plotted_values])
+    z_padding = max(1e-6, 0.05 * (z_max_value - z_min_value))
+    ax.set_zlim(z_min_value - z_padding, z_max_value + z_padding)
+    ax.set_box_aspect((x_range, z_range, x_range * 0.3 * max(v_scale, 1e-6)))
+    _set_value_axis_tick_formatter(ax, v_scale)
+    ax.set_title(
+        f"Transverse Member Diagram — {component_display} ({unit})",
+        fontsize=12,
+        fontweight="bold",
+        pad=12,
+    )
+    ax.view_init(elev=DEFAULT_ELEV, azim=DEFAULT_AZIM)
+    for pane in (ax.xaxis.pane, ax.yaxis.pane, ax.zaxis.pane):
+        pane.fill = False
+        pane.set_edgecolor("#555555")
+        pane.set_linewidth(1.5)
+        pane.set_alpha(1.0)
+    ax.grid(True, linestyle="--", linewidth=0.4, alpha=0.5)
+    _add_coordinate_triad(ax, nodes, eng_scale=v_scale)
+    ax.set_axis_off()
+    fig._eng_scale = v_scale
+    return fig, summary_data
+
+
 # =============================================================================
 # DRAWING HELPERS (matplotlib 3-D)
 # =============================================================================

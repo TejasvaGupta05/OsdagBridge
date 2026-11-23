@@ -256,9 +256,9 @@ class FrontendData:
 
             (KEY_ANALYSIS_FORCES, None,           # None = no label
                 TYPE_RADIO_GRID,
-                [["F<sub>x</sub>","V<sub>y</sub>","V<sub>z</sub>"], 
-                 ["T<sub>x</sub>","M<sub>y</sub>","M<sub>z</sub>"], 
-                 ["D<sub>x</sub>","D<sub>y</sub>","D<sub>z</sub>"]],
+                [["Fx","Vy","Vz"],
+                 ["Tx","My","Mz"],
+                 ["Dx","Dy","Dz"]],
                 True, "No Validator", {}),
 
             (KEY_ANALYSIS_DISPLAY_OPTIONS, None,  # label goes on the groupbox title instead

@@ -746,9 +746,24 @@ class CustomWindow(QWidget):
                     # Wire up the plots widget with results from the completed analysis
                     ds_all    = self.backend.get_results_dataset()
                     loadcases = self.backend.get_available_loadcases()
-                    nodes, members = self.backend.get_nodes_members()
+                    result_data = self.backend.result_data
+                    nodes = {
+                        int(tag): list(coords)
+                        for tag, coords in result_data["nodes"].items()
+                    }
+                    members = {
+                        int(tag): [int(node) for node in connected_nodes]
+                        for tag, connected_nodes in result_data["members"].items()
+                    }
                     edge_dist = self.backend.get_edge_dist()
-                    self.plots_widget.setup(ds_all, loadcases, nodes, members, edge_dist=edge_dist)
+                    self.plots_widget.setup(
+                        ds_all,
+                        loadcases,
+                        nodes,
+                        members,
+                        edge_dist=edge_dist,
+                        transverse_members=result_data["transverse_element_tags"],
+                    )
                     self.plots_widget.link_output_dock(self.output_dock)
 
                     # Render 3D cad using the parameters from Backend
@@ -788,6 +803,16 @@ class CustomWindow(QWidget):
         # This will update the CAD whenever any input field changes
         if hasattr(self.input_dock, 'input_value_changed'):
             self.input_dock.input_value_changed.connect(self.update_cad_from_inputs)        
+        self.cad_comp_widget.cross_section_widget.parameter_edit_requested.connect(
+            self._handle_cad_parameter_edit
+        )
+        self.cad_comp_widget.top_view_widget.parameter_edit_requested.connect(
+            self._handle_cad_parameter_edit
+        )
+
+    def _handle_cad_parameter_edit(self, canvas, key: str, value: str):
+        accepted = self.input_dock.apply_cad_parameter_edit(key, value) if self.input_dock else False
+        canvas.complete_parameter_edit(accepted)
             
     # Function for saving input dictionary into an OSI file
     def saveOSI_inputs(self):

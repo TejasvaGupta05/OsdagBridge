@@ -12,6 +12,7 @@ Design principles:
 """
 
 import json
+from math import isfinite
 from PySide6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QPushButton,
     QComboBox, QScrollArea, QLabel, QLineEdit, QGroupBox, QSizePolicy,
@@ -1044,6 +1045,78 @@ class InputDock(QWidget):
             
         else:
             print("[ERROR]: template_page.input_dictionary Not Found")
+
+    def apply_cad_parameter_edit(self, key: str, value: str) -> bool:
+        basic_keys = {KEY_SPAN, KEY_CARRIAGEWAY_WIDTH}
+        additional_keys = {KEY_TS_GIRDER_SPACING, KEY_TS_DECK_THICKNESS}
+        if key not in basic_keys and key not in additional_keys:
+            return False
+
+        try:
+            number = float(value)
+            if not isfinite(number):
+                raise ValueError
+        except (ValueError, TypeError):
+            CustomMessageBox(
+                title="Input Error",
+                text="Enter a valid numerical value.",
+                dialogType=MessageBoxType.Warning
+            ).exec()
+            return False
+
+        candidate = dict(self.parent.input_dict)
+        candidate[key] = number
+        if key in basic_keys:
+            validation = self.validator.validate_basic_inputs(key, candidate)
+        else:
+            validation = self.validator.validate_additional_inputs(key, candidate)
+
+        if validation is not None:
+            corrected, message = validation
+            CustomMessageBox(
+                title="Input Error",
+                text=message,
+                dialogType=MessageBoxType.Warning
+            ).exec()
+            number = float(corrected)
+
+        text = f"{number:.15g}"
+        self._update_input_dict(key, text)
+
+        field = self._w(key)
+        if isinstance(field, QLineEdit):
+            field.blockSignals(True)
+            field.setText(text)
+            field.blockSignals(False)
+
+        if key in basic_keys and self._is_require_field(key):
+            self.is_require_field_changed = True
+
+        self.input_value_changed.emit()
+
+        dialog = getattr(self.parent, "_additional_inputs_dialog", None)
+        if dialog is not None:
+            synced_keys = {
+                KEY_TS_GIRDER_SPACING,
+                KEY_TS_DECK_THICKNESS,
+                KEY_TS_DECK_OVERHANG,
+                KEY_TS_OVERALL_WIDTH,
+                KEY_TS_NO_OF_GIRDERS,
+            }
+            working_inputs = getattr(dialog, "working_input_dict", None)
+            for synced_key in synced_keys:
+                if synced_key not in self.parent.input_dict:
+                    continue
+                synced_value = self.parent.input_dict[synced_key]
+                if isinstance(working_inputs, dict) and working_inputs:
+                    working_inputs[synced_key] = synced_value
+                dialog_field = dialog.findChild(QLineEdit, synced_key)
+                if dialog_field and synced_value is not None:
+                    dialog_field.blockSignals(True)
+                    dialog_field.setText(str(synced_value))
+                    dialog_field.blockSignals(False)
+
+        return True
 
     def populate_from_dict(self, data: dict) -> None:
         """

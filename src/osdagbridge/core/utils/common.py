@@ -133,6 +133,7 @@ KEY_SECTION_OUTPUT_STEELDESIGN = "section.output.superstructure.steeldesign"
 # ── Output field keys ─────────────────────────────────────────────────────────
 KEY_ANALYSIS_MEMBER           = "analysis.member"
 KEY_ANALYSIS_LOAD_COMBINATION = "analysis.load_combination"
+PLOT_TRANSVERSE_MEMBERS       = "Transverse Members"
 KEY_ANALYSIS_FORCES           = "analysis.forces"
 KEY_ANALYSIS_DISPLAY_OPTIONS  = "analysis.display_options"
 KEY_ANALYSIS_UTILIZATION      = "analysis.utilization"

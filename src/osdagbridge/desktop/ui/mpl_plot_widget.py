@@ -21,31 +21,33 @@ from osdagbridge.core.bridge_types.plate_girder.plot_generator import (
     build_figure_sfd,
     build_figure_bmd,
     build_figure_deflection,
+    build_figure_transverse,
     build_figure_grillage,
     _add_node_number_labels,
     _add_element_number_labels,
     FORCE_MAP,
     DISP_MAP,
 )
+from osdagbridge.core.utils.common import PLOT_TRANSVERSE_MEMBERS
 
 # Forces starting with "F" -> shear (SFD); starting with "M" -> moment (BMD)
 _SFD_KEYS  = {k for k in FORCE_MAP if k.startswith("F")}
 _DEFL_KEYS = set(DISP_MAP.keys())   # "Dx", "Dy", "Dz"
 
-# Map from the HTML labels used in OutputDock's radio grid -> plot keys
-_RICH_LABEL_TO_FORCE = {
-    "F<sub>x</sub>": "Fx",
-    "V<sub>y</sub>": "Fy",
-    "V<sub>z</sub>": "Fz",
-    "T<sub>x</sub>": "Mx",
-    "M<sub>y</sub>": "My",
-    "M<sub>z</sub>": "Mz",
-    "D<sub>x</sub>": "Dx",
-    "D<sub>y</sub>": "Dy",
-    "D<sub>z</sub>": "Dz",
+# Map from the labels used in OutputDock's radio grid -> plot keys
+_RADIO_LABEL_TO_FORCE = {
+    "Fx": "Fx",
+    "Vy": "Fy",
+    "Vz": "Fz",
+    "Tx": "Mx",
+    "My": "My",
+    "Mz": "Mz",
+    "Dx": "Dx",
+    "Dy": "Dy",
+    "Dz": "Dz",
 }
 
-_DEFAULT_FORCE_LABEL = "V<sub>y</sub>"   # pre-checked on first link
+_DEFAULT_FORCE_LABEL = "Vy"
 
 
 # =============================================================================
@@ -171,6 +173,7 @@ class MplPlotWidget(QWidget):
         self._loadcases = []
         self._nodes     = {}
         self._members   = {}
+        self._transverse_members = []
         self._edge_dist = 0.0
         self._output_dock = None
         self._summary_data = {}
@@ -339,6 +342,7 @@ class MplPlotWidget(QWidget):
         self._loadcases = []
         self._nodes     = {}
         self._members   = {}
+        self._transverse_members = []
         self._output_dock = None
         self._summary_data = {}
         self._cb_max = None
@@ -377,7 +381,7 @@ class MplPlotWidget(QWidget):
                 pass
 
         for rb in self._output_dock.output_widget.findChildren(CustomRadioButton):
-            if rb.text() in _RICH_LABEL_TO_FORCE:
+            if rb.text() in _RADIO_LABEL_TO_FORCE:
                 try:
                     rb.toggled.disconnect(self.update_plot)
                 except RuntimeError:
@@ -406,12 +410,20 @@ class MplPlotWidget(QWidget):
                 except RuntimeError:
                     pass
 
-    def setup(self, ds_all, loadcases: list, nodes: dict, members: dict,
-              edge_dist: float = 0.0):
+    def setup(
+        self,
+        ds_all,
+        loadcases: list,
+        nodes: dict,
+        members: dict,
+        edge_dist: float = 0.0,
+        transverse_members: list | None = None,
+    ):
         self._ds_all    = ds_all
         self._loadcases = list(loadcases)
         self._nodes     = nodes
         self._members   = members
+        self._transverse_members = [int(tag) for tag in (transverse_members or [])]
         self._edge_dist = edge_dist
 
         if hasattr(self, '_fig') and self._fig.axes:
@@ -457,7 +469,7 @@ class MplPlotWidget(QWidget):
         from osdagbridge.desktop.ui.utils.custom_widgets import CustomRadioButton
         force_rbs = [
             rb for rb in output_dock.output_widget.findChildren(CustomRadioButton)
-            if rb.text() in _RICH_LABEL_TO_FORCE
+            if rb.text() in _RADIO_LABEL_TO_FORCE
         ]
         for rb in force_rbs:
             rb.setChecked(rb.text() == _DEFAULT_FORCE_LABEL)
@@ -538,7 +550,16 @@ class MplPlotWidget(QWidget):
 
         # (Your existing if/elif/else block to build the new figures)
         eng_scale = self._eng_scale
-        if force_key in _SFD_KEYS:
+        if sel_girder == PLOT_TRANSVERSE_MEMBERS:
+            self._fig, self._summary_data = build_figure_transverse(
+                ds,
+                force_key,
+                self._nodes,
+                self._members,
+                self._transverse_members,
+                eng_scale=eng_scale,
+            )
+        elif force_key in _SFD_KEYS:
             self._fig, self._summary_data = build_figure_sfd(
                 ds, force_key, self._nodes, self._members,
                 edge_dist=self._edge_dist, eng_scale=eng_scale,
@@ -716,6 +737,8 @@ class MplPlotWidget(QWidget):
                 old_azim = self._fig.axes[0].azim
             plt.close(self._fig)
             sel_girder = self._current_member()
+            if sel_girder == PLOT_TRANSVERSE_MEMBERS:
+                sel_girder = "All"
             self._fig = build_figure_grillage(self._nodes, self._members, edge_dist=self._edge_dist, selected_girder=sel_girder)
             self._attach_figure(self._fig)
             if self._fig.axes and old_elev is not None and old_azim is not None:
@@ -1485,6 +1508,6 @@ class MplPlotWidget(QWidget):
     def _current_force_key(self) -> str:
         from osdagbridge.desktop.ui.utils.custom_widgets import CustomRadioButton
         for rb in self._output_dock.output_widget.findChildren(CustomRadioButton):
-            if rb.isChecked() and rb.text() in _RICH_LABEL_TO_FORCE:
-                return _RICH_LABEL_TO_FORCE[rb.text()]
+            if rb.isChecked() and rb.text() in _RADIO_LABEL_TO_FORCE:
+                return _RADIO_LABEL_TO_FORCE[rb.text()]
         return "Fy"

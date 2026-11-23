@@ -94,6 +94,32 @@ def _build_nodes_members() -> tuple[dict, dict]:
     return nodes, members
 
 
+def _classify_member_tags(
+    nodes: dict,
+    members: dict,
+    element_tags=None,
+    tolerance: float = 1e-3,
+) -> tuple[list[int], list[int]]:
+    available_tags = (
+        {int(tag) for tag in element_tags}
+        if element_tags is not None
+        else set(members)
+    )
+    longitudinal = []
+    transverse = []
+    for tag in sorted(available_tags.intersection(members)):
+        node_i, node_j = members[tag]
+        coord_i = nodes.get(node_i)
+        coord_j = nodes.get(node_j)
+        if coord_i is None or coord_j is None or len(coord_i) < 3 or len(coord_j) < 3:
+            continue
+        if abs(coord_i[2] - coord_j[2]) < tolerance:
+            longitudinal.append(tag)
+        else:
+            transverse.append(tag)
+    return longitudinal, transverse
+
+
 def dump_full_data(
     model,
     edge_dist: float = 0.0,
@@ -408,18 +434,16 @@ def _build_full_data(model, edge_dist: float = 0.0, dataset=None, lazy: bool = F
     disp_components = [str(
         c) for c in ds0["displacements"].coords["Component"].values] if "displacements" in ds0.data_vars else []
 
-    # Classify members: longitudinal = both nodes share same Z and same Y
-    _z_tol = 1e-3
-    longitudinal_members = []
-    transverse_members = []
-    for tag, (n1, n2) in members.items():
-        if n1 not in nodes or n2 not in nodes:
-            continue
-        if (abs(nodes[n1][2] - nodes[n2][2]) < _z_tol and
-                abs(nodes[n1][1] - nodes[n2][1]) < _z_tol):
-            longitudinal_members.append(tag)
-        else:
-            transverse_members.append(tag)
+    force_element_tags = (
+        ds_all["forces"].coords["Element"].values
+        if "forces" in ds_all.data_vars and "Element" in ds_all["forces"].coords
+        else None
+    )
+    longitudinal_members, transverse_members = _classify_member_tags(
+        nodes,
+        members,
+        force_element_tags,
+    )
 
     data: dict = {
         "nodes": {str(k): list(v) for k, v in nodes.items()},
@@ -427,6 +451,7 @@ def _build_full_data(model, edge_dist: float = 0.0, dataset=None, lazy: bool = F
         "groups": groups,
         "longitudinal_members": longitudinal_members,
         "transverse_members": transverse_members,
+        "transverse_element_tags": transverse_members,
         "edge_dist": float(edge_dist),
         "loadcases": list(loadcases),
         "force_components": force_components,
